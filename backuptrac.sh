@@ -1,56 +1,40 @@
 #!/bin/bash
 
-
-
-#PARAMS
-no_of_backups_to_keep=1
-
-test_mode="true"
-
 echo "Begin backing up the data, inside the container."
 #backup the node first inside the container
 docker exec otnode node /ot-node/current/scripts/backup.js --configDir=/ot-node/data
-#Send in the script to do the graft - UPTOHERE
-docker cp ./dockerwork.sh otnode:/ot-node/backup/dockerwork.sh
-#ls ./backup
-
-
-echo "Move into the container"
-docker exec -it otnode bash
 sleep 2
-cd ../
 
-sleep 1
-echo "Create backup folder if it does not already exist"
-mkdir -p backup
-cd backup
+#Remove the key sh files if they already exist
+docker exec otnode rm /ot-node/backup/encryptbackup.sh 2> /dev/null
+docker exec otnode rm /ot-node/backup/clearalldirectorybackups.sh 2> /dev/null
 
+#Add the key sh files fresh
 
+#docker cp ./dockerwork.sh otnode:/ot-node/backup/dockerwork.sh
 
+#Copy the key script files into the docker container
+docker cp ./clearalldirectorybackups.sh otnode:/ot-node/backup/clearalldirectorybackups.sh
+docker cp ./encryptbackup.sh otnode:/ot-node/backup/encryptbackup.sh
 
+#Run the encryptback.sh
+docker exec otnode bash -c "/ot-node/backup/encryptbackup.sh"
 
-#Get current directory name
-current_directory_name=${PWD##*/}
-if [[ "$current_directory_name" == "backup" ]]; then
-echo "We are inside the backup directory!"
-else
-echo "We are not inside the backup directory inside the container. Aborting as delete command will be too dangerous!"
-exit 1
-fi
+#Run clear all directory backups
+sleep 2
 
+echo "Copying the encrypted filename from docker container"
 
+docker cp otnode:/ot-node/backup/last_encrypted.log ~/trac-a-backup/
+last_enc_filename=$(<last_encrypted.log)
+echo "last_enc_filename is $last_enc_filename"
+docker cp otnode:/ot-node/backup/$last_enc_filename ~/trac-a-backup/
 
-#CLEAN UP the backups except last one
-if [[ "$test_mode" == "true" ]]; then
-echo "TEST MODE ONLY"
-  find -maxdepth 1 -type d ! -wholename $(find -type d -printf '%T+ %p\n' | sort -r | head -1 | cut -d" " -f2) ! -wholename "." | awk 'NR>1'
-else
-echo "LIVE MODE"
-  find -maxdepth 1 -type d ! -wholename $(find -type d -printf '%T+ %p\n' | sort -r | head -1 | cut -d" " -f2) ! -wholename "." | awk 'NR>1' -exec rm -r -v {} +
-fi
-echo "Calling exit"
+sleep 2
+
+#Clear all directory backups.
+echo "Running clearalldirectorybackups.sh"
+
+docker exec otnode bash -c "/ot-node/backup/clearalldirectorybackups.sh"
+echo "### exiting backuptrac.sh ###"
 exit
-cd ~
-echo "Copying backup folder to node from docker container"
-docker cp otnode:/ot-node/backup ./
-echo "completed"
